@@ -1,0 +1,149 @@
+# This workflow will upload a Python Package to PyPI when a release is created
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python#publishing-to-package-registries
+
+# This workflow uses actions that are not certified by GitHub.
+# They are provided by a third-party and are governed by
+# separate terms of service, privacy policy, and support
+# documentation.
+
+name: Upload Python Package
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  release-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Build release distributions
+        run: |
+          # NOTE: put your own distribution build steps here.
+          python -m pip install build
+          python -m build
+
+      - name: Upload distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-dists
+          path: dist/
+
+  pypi-publish:
+    runs-on: ubuntu-latest
+    needs:
+      - release-build
+    permissions:
+      # IMPORTANT: this permission is mandatory for trusted publishing
+      id-token: write
+
+    # Dedicated environments with protections for publishing are strongly recommended.
+    # For more information, see: https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment#deployment-protection-rules
+    environment:
+      name: pypi
+      # OPTIONAL: uncomment and update to include your PyPI project URL in the deployment status:
+      # url: https://pypi.org/p/YOURPROJECT
+      #
+      # ALTERNATIVE: if your GitHub Release name is the PyPI project version string
+      # ALTERNATIVE: exactly, uncomment the following line instead:
+      # url: https://pypi.org/project/YOURPROJECT/${{ github.event.release.name }}
+
+    steps:
+      - name: Retrieve release distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: release-dists
+          path: dist/
+
+      - name: Publish release distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+import telebot
+import openpyxl
+from openpyxl import Workbook
+import os
+
+# Укажите ваш токен бота
+TOKEN = '8410859830:AAEqRSwrAXfUQaf4POcBRy9f_w9CS5_TNxE'
+bot = telebot.TeleBot(TOKEN)
+
+EXCEL_FILE = 'medicines.xlsx'
+
+# Функция для создания файла Excel, если его нет
+def create_excel_file():
+    if not os.path.exists(EXCEL_FILE):
+        wb = Workbook()
+        ws = wb.active
+        ws.append(['Название препарата', 'Дозировка', 'Описание препарата'])
+        wb.save(EXCEL_FILE)
+
+# Функция для добавления нового препарата в Excel
+def add_medicine_to_excel(Анальгин, собака, Жаропонижающее):
+    create_excel_file()
+    wb = openpyxl.load_workbook(EXCEL_FILE)
+    ws = wb.active
+    ws.append([name, dosage, description])
+    wb.save(EXCEL_FILE)
+
+# Функция для поиска препарата по названию
+def find_medicine_by_name(name):
+    create_excel_file()
+    wb = openpyxl.load_workbook(EXCEL_FILE)
+    ws = wb.active
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        if row[0] and row[0].strip().lower() == name.strip().lower():
+            return {
+                'Название препарата': row[0],
+                'Дозировка': row[1],
+                'Описание препарата': row[2]
+            }
+    return None
+@bot.message_handler(commands=['start'])
+def send_welcome(message):
+    bot.reply_to(message, "Привет! Введите название препарата, чтобы получить информацию, или отправьте /add для добавления нового препарата.")
+
+@bot.message_handler(commands=['add'])
+def add_medicine_start(message):
+    msg = bot.send_message(message.chat.id, "Введите название препарата:")
+    bot.register_next_step_handler(msg, process_name_step)
+
+def process_name_step(message):
+    name = message.text
+    msg = bot.send_message(message.chat.id, "Введите дозировку препарата:")
+    bot.register_next_step_handler(msg, process_dosage_step, name)
+
+def process_dosage_step(message, name):
+    dosage = message.text
+    msg = bot.send_message(message.chat.id, "Введите описание препарата:")
+    bot.register_next_step_handler(msg, process_description_step, name, dosage)
+
+def process_description_step(message, name, dosage):
+    description = message.text
+    add_medicine_to_excel(name, dosage, description)
+    bot.send_message(message.chat.id, f"Препарат '{name}' добавлен в базу данных.")
+
+@bot.message_handler(func=lambda message: True)
+def handle_message(message):
+    query = message.text
+    result = find_medicine_by_name(query)
+    if result:
+        response = (f"Название препарата: {result['Название препарата']}\n"
+                    f"Дозировка: {result['Дозировка']}\n"
+                    f"Описание: {result['Описание препарата']}")
+    else:
+        response = "Препарат не найден в базе. Для добавления используйте команду /add."
+    bot.reply_to(message, response)
+
+if __name__ == '__main__':
+    create_excel_file()
+    bot.polling(none_stop=True)
